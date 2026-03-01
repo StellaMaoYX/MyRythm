@@ -213,6 +213,8 @@ export function InsightChatPage() {
   const [input, setInput] = useState("");
   const [journalEntry, setJournalEntry] = useState("");
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -236,6 +238,55 @@ export function InsightChatPage() {
     },
     [scrollToBottom]
   );
+
+  useEffect(() => {
+    const isMobile = () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 767px)").matches;
+
+    const updateKeyboardInset = () => {
+      if (!isMobile() || !isInputFocused || typeof window === "undefined" || !window.visualViewport) {
+        setKeyboardInset(0);
+        return;
+      }
+      const vv = window.visualViewport;
+      const inset = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+      setKeyboardInset(inset);
+    };
+
+    const isFormField = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || el.isContentEditable;
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isMobile() && isFormField(event.target)) {
+        setIsInputFocused(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        setIsInputFocused(isMobile() && isFormField(active));
+      }, 0);
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    window.visualViewport?.addEventListener("resize", updateKeyboardInset);
+    window.visualViewport?.addEventListener("scroll", updateKeyboardInset);
+    updateKeyboardInset();
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      window.visualViewport?.removeEventListener("resize", updateKeyboardInset);
+      window.visualViewport?.removeEventListener("scroll", updateKeyboardInset);
+    };
+  }, [isInputFocused]);
 
   // Auto-start conversation
   useEffect(() => {
@@ -402,7 +453,8 @@ export function InsightChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-full max-w-lg mx-auto">
+    <div className="min-h-[100dvh] bg-[#FAF8F5]">
+      <div className="flex flex-col h-[100dvh] max-w-lg mx-auto">
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-[rgba(45,42,38,0.08)] bg-white">
         <div className="flex items-center gap-3">
@@ -435,7 +487,10 @@ export function InsightChatPage() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-4 pb-[calc(96px+env(safe-area-inset-bottom))] space-y-3"
+      >
         {backendError && (
           <div className="bg-[#FDF8E7] border border-[#FFE0B2] rounded-xl px-3 py-2 text-[12px] text-[#A67C37]">
             Backend unavailable. Showing fallback response. ({backendError})
@@ -545,26 +600,32 @@ export function InsightChatPage() {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-[rgba(45,42,38,0.08)] bg-white">
-        <div className="flex items-center gap-2 bg-[#F5F2EE] rounded-full px-4 py-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendMessage(input)}
-            placeholder="Type a message..."
-            className="flex-1 bg-transparent outline-none text-[14px] text-[#2D2A26] placeholder:text-[#8A8680]"
-            style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 400 }}
-          />
-          <button
-            onClick={() => handleSendMessage(input)}
-            disabled={!input.trim() || isTyping}
-            className="w-8 h-8 rounded-full bg-[#8B6E5A] flex items-center justify-center disabled:opacity-40 transition-opacity"
-          >
-            <Send className="w-4 h-4 text-white" />
-          </button>
+      <div
+        className="fixed left-0 right-0 z-40 border-t border-[rgba(45,42,38,0.08)] bg-white"
+        style={{ bottom: keyboardInset }}
+      >
+        <div className="max-w-lg mx-auto p-4 pb-[calc(16px+env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2 bg-[#F5F2EE] rounded-full px-4 py-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSendMessage(input)}
+              placeholder="Type a message..."
+              className="flex-1 bg-transparent outline-none text-[14px] text-[#2D2A26] placeholder:text-[#8A8680]"
+              style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 400 }}
+            />
+            <button
+              onClick={() => handleSendMessage(input)}
+              disabled={!input.trim() || isTyping}
+              className="w-8 h-8 rounded-full bg-[#8B6E5A] flex items-center justify-center disabled:opacity-40 transition-opacity"
+            >
+              <Send className="w-4 h-4 text-white" />
+            </button>
+          </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

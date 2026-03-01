@@ -48,6 +48,34 @@ const suggestedQuestions = [
   "Am I in my PMS window?",
 ];
 
+const mockCalendarEventsByDate: Record<string, string[]> = {
+  "2026-03-01": [
+    "08:30 Morning planning",
+    "10:00 Project sync",
+    "11:30 Deep work block (feature implementation)",
+    "13:00 Lunch with teammate",
+    "15:00 Presentation prep",
+    "17:30 Gym session",
+    "20:00 Wind-down / reading",
+  ],
+  "2026-03-02": [
+    "09:00 Standup",
+    "10:30 User interview",
+    "12:00 Lunch break",
+    "14:00 Product review",
+    "16:30 Focus sprint",
+    "19:00 Dinner with friends",
+  ],
+  "2026-03-03": [
+    "08:00 Weekly planning",
+    "09:30 Cross-team sync",
+    "12:30 Walk + recovery",
+    "14:00 Demo rehearsal",
+    "16:00 1:1 mentor check-in",
+    "21:30 Early sleep target",
+  ],
+};
+
 function formatCoachMessage(coach: CoachResponse): string {
   const suggestionLines = (coach.prepare_suggestion || [])
     .slice(0, 3)
@@ -111,7 +139,13 @@ export function ChatConversationPage() {
           date: session.date,
           checkin: session.checkin,
           prediction: session.prediction,
-          calendar_events: ["10:00 project sync", "15:00 presentation prep", "17:30 gym"],
+          calendar_events:
+            mockCalendarEventsByDate[session.date] ?? [
+              "09:00 Standup",
+              "11:00 Work session",
+              "14:00 Project meeting",
+              "18:00 Personal time",
+            ],
           message: thread.starter,
           chat_history: [],
         });
@@ -159,7 +193,13 @@ export function ChatConversationPage() {
         date: session.date,
         checkin: session.checkin,
         prediction: session.prediction,
-        calendar_events: ["10:00 project sync", "15:00 presentation prep", "17:30 gym"],
+        calendar_events:
+          mockCalendarEventsByDate[session.date] ?? [
+            "09:00 Standup",
+            "11:00 Work session",
+            "14:00 Project meeting",
+            "18:00 Personal time",
+          ],
         message: prompt,
         chat_history: messages.map((m) => ({ role: m.role, content: m.content })),
       });

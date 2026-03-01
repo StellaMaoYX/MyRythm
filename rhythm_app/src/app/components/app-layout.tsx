@@ -120,13 +120,16 @@ export function Layout() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FAF8F5]">
-      <div className="flex-1 overflow-y-auto">
+    <div className="min-h-[100dvh] bg-[#FAF8F5]">
+      <div className="h-[100dvh] overflow-y-auto pb-[calc(72px+env(safe-area-inset-bottom)+16px)]">
         <Outlet />
       </div>
 
       {/* Bottom navigation */}
-      <nav className="relative shrink-0 bg-white" style={{ borderTop: "0.612px solid rgba(45,42,38,0.08)" }}>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 bg-white"
+        style={{ borderTop: "0.612px solid rgba(45,42,38,0.08)" }}
+      >
         <div className="flex items-center justify-between px-[10px] max-w-lg mx-auto pb-[env(safe-area-inset-bottom)]">
           {/* Left 2 nav items */}
           {navItems.slice(0, 2).map((item) => {

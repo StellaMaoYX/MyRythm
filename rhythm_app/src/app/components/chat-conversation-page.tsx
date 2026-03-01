@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Send, Sparkles, ArrowDown, ArrowLeft } from "lucide-react";
+import { Send, Sparkles, ArrowDown, ArrowLeft, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { postCoachChat, type CoachResponse } from "../lib/api";
 import { loadSessionState } from "../lib/sessionStore";
-import { chatMessages as initialMessages } from "./mock-data";
 
 interface Message {
   id: number;
@@ -12,26 +11,34 @@ interface Message {
   content: string;
 }
 
-const threadInitialMessages: Record<string, Message[]> = {
-  "recovery-load": initialMessages,
-  "sleep-pattern": [
-    { id: 1, role: "assistant", content: "I noticed your sleep architecture has been shifting over the past 4 nights." },
-    { id: 2, role: "assistant", content: "Your deep sleep has decreased by 18%, from an average of 2.1h to 1.7h. Combined with a rising wrist temperature of +0.3°C, this suggests your body is entering the late luteal phase. REM sleep has also shortened slightly." },
-    { id: 3, role: "user", content: "Should I be worried?" },
-    { id: 4, role: "assistant", content: "Not at all — this is a pattern I’ve consistently seen in your data during the luteal phase. Progesterone rises during this phase and can reduce deep sleep duration by 10-20%. Your body is responding normally. Try winding down 30 minutes earlier and limiting screen time after 9pm." },
-  ],
-  "period-prediction": [
-    { id: 1, role: "assistant", content: "Based on your current cycle data and bio-signal patterns, I estimate your next period will start around March 11th." },
-    { id: 2, role: "assistant", content: "Your wrist temperature has risen +0.3°C and HRV has been declining — both consistent with your typical late-luteal pattern. You’re currently on day 18 of a 28-day cycle. The PMS window typically opens around March 7-9 based on your history." },
-  ],
-  "hrv-cycle-pattern": [
-    { id: 1, role: "assistant", content: "I’ve identified a strong pattern in your HRV data over the past 3 months." },
-    { id: 2, role: "assistant", content: "Your HRV consistently drops 15-20% during the luteal phase and peaks during the follicular phase. This is a reliable, repeating pattern — it’s held for 5 of your last 6 cycles. During follicular, your average HRV is 52ms. During luteal, it drops to around 38-42ms." },
-  ],
-  "movement-mood": [
-    { id: 1, role: "assistant", content: "I found an interesting correlation between your movement and mood check-ins." },
-    { id: 2, role: "assistant", content: "On days when your step count exceeds 8,000, you’re 60% more likely to check in with ‘Calm’ or ‘Energized’ moods. This holds even during luteal phase dips. It doesn’t have to be intense — a 30-minute walk seems to have the same effect." },
-  ],
+const threadPrompts: Record<string, { title: string; starter: string }> = {
+  "recovery-load": {
+    title: "Recovery load is higher than usual",
+    starter: "Give me today's full rhythm summary with key risks and what I should prioritize.",
+  },
+  "sleep-pattern": {
+    title: "Sleep architecture shifting",
+    starter: "Analyze my recent sleep pattern and explain what changed and why.",
+  },
+  "period-prediction": {
+    title: "Period prediction update",
+    starter: "Give me my current cycle and period prediction update with confidence.",
+  },
+  "hrv-cycle-pattern": {
+    title: "Your HRV follows your cycle",
+    starter: "Explain how my HRV is tracking against my cycle baseline right now.",
+  },
+  "movement-mood": {
+    title: "Movement supports your mood",
+    starter: "Explain how my activity patterns may be affecting mood and stress this week.",
+  },
+};
+
+const fallbackReplies: Record<string, string> = {
+  "When is my period expected?": "I couldn't reach the live model right now. Please retry in a moment for the latest personalized prediction.",
+  "Why is my HRV dropping?": "I couldn't reach the live model right now. Please retry in a moment and I'll analyze your HRV trend.",
+  "How's my sleep this week?": "I couldn't reach the live model right now. Please retry in a moment for your latest sleep analysis.",
+  "Am I in my PMS window?": "I couldn't reach the live model right now. Please retry in a moment and I'll check your PMS window from the latest context.",
 };
 
 const suggestedQuestions = [
@@ -40,17 +47,6 @@ const suggestedQuestions = [
   "How's my sleep this week?",
   "Am I in my PMS window?",
 ];
-
-const aiResponses: Record<string, string> = {
-  "When is my period expected?":
-    "Based on your current cycle data and bio-signal patterns, I estimate your next period will start around March 11th. Your wrist temperature has risen +0.3°C and HRV has been declining — both consistent with your typical late-luteal pattern. You're currently on day 18 of a 28-day cycle.",
-  "Why is my HRV dropping?":
-    "Your HRV has decreased from 48ms to 38ms over the past 5 days. This 21% decline is consistent with what I've observed in your previous luteal phases. Rising progesterone levels typically increase sympathetic nervous system activity, which lowers HRV. This is normal for your pattern — it usually recovers within 2-3 days of your period starting.",
-  "How's my sleep this week?":
-    "This week has been mixed. Your best night was Saturday (8.1h, score 92) with excellent deep sleep. Friday was your lowest (6.2h, score 68). Overall, your deep sleep has averaged 1.7h — slightly below your 3-month average of 1.8h. The decline in deep sleep correlates with the luteal phase pattern I've seen in your data.",
-  "Am I in my PMS window?":
-    "Not quite yet, but you're approaching it. Based on your history, your PMS symptoms typically emerge around cycle days 25-28. You're currently on day 18. However, your bio-signals are already shifting — elevated RHR, declining HRV, and rising temperature. I'll flag when the window opens, likely around March 7-9.",
-};
 
 function formatCoachMessage(coach: CoachResponse): string {
   const suggestionLines = (coach.prepare_suggestion || [])
@@ -72,19 +68,76 @@ function formatCoachMessage(coach: CoachResponse): string {
 export function ChatConversationPage() {
   const navigate = useNavigate();
   const { threadId } = useParams();
-  const initMsgs = threadInitialMessages[threadId || "recovery-load"] || initialMessages;
-  const [messages, setMessages] = useState<Message[]>(initMsgs);
+  const threadKey = threadId || "recovery-load";
+  const thread = threadPrompts[threadKey] || threadPrompts["recovery-load"];
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [chatSeed, setChatSeed] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const loadIdRef = useRef(0);
+
+  useEffect(() => {
+    setMessages([]);
+    setBackendError(null);
+    setInput("");
+    setIsTyping(false);
+    setChatSeed(0);
+  }, [threadKey]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    const runInitialCoachMessage = async () => {
+      loadIdRef.current += 1;
+      const loadId = loadIdRef.current;
+      setIsTyping(true);
+      setBackendError(null);
+      try {
+        const session = loadSessionState();
+        if (!session?.checkin || !session?.prediction) {
+          throw new Error("No model session found. Submit a Check-in first.");
+        }
+
+        const coach = await postCoachChat({
+          user_id: session.userId,
+          date: session.date,
+          checkin: session.checkin,
+          prediction: session.prediction,
+          calendar_events: ["10:00 project sync", "15:00 presentation prep", "17:30 gym"],
+          message: thread.starter,
+          chat_history: [],
+        });
+
+        if (loadId !== loadIdRef.current) return;
+        const response = (coach.assistant_reply || "").trim() || formatCoachMessage(coach);
+        setMessages([{ id: 1, role: "assistant", content: response }]);
+      } catch (err) {
+        if (loadId !== loadIdRef.current) return;
+        const errorMessage = err instanceof Error ? err.message : "Backend chat failed";
+        setBackendError(errorMessage);
+        setMessages([
+          {
+            id: 1,
+            role: "assistant",
+            content: "I couldn't reach the live model for the opening summary. Please retry after a fresh Check-in.",
+          },
+        ]);
+      } finally {
+        if (loadId !== loadIdRef.current) return;
+        setIsTyping(false);
+      }
+    };
+
+    runInitialCoachMessage();
+  }, [thread.starter, chatSeed]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -122,12 +175,28 @@ export function ChatConversationPage() {
 
     setTimeout(() => {
       const response =
-        aiResponses[prompt] ||
-        "I’ve analyzed your recent bio-signals. Your heart rate, HRV, sleep patterns, and temperature data all suggest your body is in a typical late-luteal transition. I don’t see any unusual deviations from your baseline patterns. Would you like me to dive deeper into any specific signal?";
+        fallbackReplies[prompt] ||
+        "I couldn't reach the live model just now. Please try again in a moment for a real-time personalized answer.";
       const aiMsg: Message = { id: messages.length + 2, role: "assistant", content: response };
       setMessages((prev) => [...prev, aiMsg]);
       setIsTyping(false);
-    }, 1500);
+    }, 800);
+  };
+
+  const handleBack = () => {
+    if (threadId) {
+      navigate("/chat");
+      return;
+    }
+    navigate("/");
+  };
+
+  const handleNewChat = () => {
+    if (isTyping) return;
+    setMessages([]);
+    setInput("");
+    setBackendError(null);
+    setChatSeed((prev) => prev + 1);
   };
 
   return (
@@ -135,7 +204,7 @@ export function ChatConversationPage() {
       <div className="px-4 pt-4 pb-3 border-b bg-white" style={{ borderColor: "rgba(45,42,38,0.08)" }}>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/chat")}
+            onClick={handleBack}
             className="w-9 h-9 rounded-full bg-[rgba(45,42,38,0.05)] flex items-center justify-center"
           >
             <ArrowLeft className="w-5 h-5 text-[#2D2A26]" />
@@ -148,9 +217,18 @@ export function ChatConversationPage() {
               Rhythm AI
             </p>
             <p className="text-[11px] text-[#8A8680]" style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 400 }}>
-              Your personal rhythm companion
+              {thread.title}
             </p>
           </div>
+          <button
+            onClick={handleNewChat}
+            disabled={isTyping}
+            className="ml-auto h-8 px-2.5 rounded-full bg-[rgba(45,42,38,0.05)] text-[#2D2A26] text-[11px] flex items-center gap-1 disabled:opacity-40"
+            style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Chat
+          </button>
         </div>
       </div>
 
@@ -160,6 +238,7 @@ export function ChatConversationPage() {
             Live backend unavailable: {backendError}
           </div>
         )}
+
         {messages.map((msg, index) => (
           <motion.div
             key={msg.id}
@@ -199,7 +278,7 @@ export function ChatConversationPage() {
           </motion.div>
         )}
 
-        {messages.length <= 4 && !isTyping && (
+        {messages.length <= 2 && !isTyping && (
           <div className="pt-2">
             <p className="text-[11px] text-[#8A8680] mb-2 flex items-center gap-1" style={{ fontFamily: "'DM Sans', sans-serif" }}>
               <ArrowDown className="w-3 h-3" /> Ask me about your rhythm

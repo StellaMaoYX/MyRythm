@@ -33,12 +33,14 @@ export function CheckInSheet({
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const toggleEmotion = (label: string, emoji: string) => {
+    setValidationError(null);
     setSelectedEmotions((prev) => {
       const exists = prev.find((e) => e.label === label);
       if (exists) return prev.filter((e) => e.label !== label);
-      return [...prev, { label, emoji, intensity: null }];
+      return [...prev, { label, emoji, intensity: "moderate" }];
     });
   };
 
@@ -56,7 +58,15 @@ export function CheckInSheet({
     selectedEmotions.length > 0 && selectedEmotions.every((e) => e.intensity !== null);
 
   const handleSubmit = async () => {
-    if (!allHaveIntensity) return;
+    if (selectedEmotions.length === 0) {
+      setValidationError("Please select at least one emotion.");
+      return;
+    }
+    if (!allHaveIntensity) {
+      setValidationError("Please set an intensity for each selected emotion.");
+      return;
+    }
+    setValidationError(null);
     setSubmitError(null);
     setIsSubmitting(true);
     try {
@@ -81,6 +91,7 @@ export function CheckInSheet({
     setNote("");
     setSubmitted(false);
     setSubmitError(null);
+    setValidationError(null);
     setIsSubmitting(false);
   };
 
@@ -275,6 +286,14 @@ export function CheckInSheet({
                       style={{ ...dmSans, fontWeight: 400 }}
                     >
                       Backend sync failed: {submitError}
+                    </p>
+                  )}
+                  {validationError && (
+                    <p
+                      className="mt-2 text-[12px] text-[#A67C37]"
+                      style={{ ...dmSans, fontWeight: 400 }}
+                    >
+                      {validationError}
                     </p>
                   )}
                 </>

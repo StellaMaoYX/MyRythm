@@ -1,0 +1,2 @@
+user_id,date,user_stress_label,user_mood_label,mood_text,sentiment_score,updated_at
+u_demo,2026-02-28,1,1,今天一般 还行,0.0,2026-02-28T23:48:01.342897

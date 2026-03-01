@@ -21,7 +21,7 @@ import {
   activityData,
   temperatureData,
   insightCards,
-} from "./mock-data";
+} from "./mockData";
 import svgPaths from "../../imports/svg-yaadcsgjcs";
 
 // ── Figma SVG Icons for insight cards ──────────────────────────────

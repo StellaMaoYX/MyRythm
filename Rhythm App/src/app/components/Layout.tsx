@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import svgPaths from "../../imports/svg-ndbywbamvi";
-import { postCheckin, postPredictDaily } from "../lib/api";
-import { saveSessionState } from "../lib/sessionStore";
-import { activityData, heartRateData, sleepData, temperatureData } from "./mock-data";
-import { CheckInSheet, type SelectedEmotion } from "./check-in-sheet";
+import { CheckInSheet } from "./CheckInSheet";
 
 // ── Nav SVG Icons (from Figma) ─────────────────────────────────────
 
@@ -71,48 +68,6 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [checkInOpen, setCheckInOpen] = useState(false);
-
-  const handleCheckInSubmit = async (emotions: SelectedEmotion[], note: string) => {
-    const userId = "u_demo";
-    const date = new Date().toISOString().slice(0, 10);
-    const moodText = emotions.map((e) => `${e.emoji} ${e.label} (${e.intensity ?? "unknown"})`).join(", ");
-
-    const iwatchFeatures = {
-      hr_mean: heartRateData.current,
-      hr_std: 7,
-      hrv_mean: heartRateData.hrv,
-      wrist_temp: temperatureData.current,
-      steps: activityData.steps,
-      sleep_hours: sleepData.lastNight.total,
-      resting_hr: heartRateData.resting,
-      respiratory_rate: 15,
-    };
-
-    const checkin = await postCheckin({
-      user_id: userId,
-      date,
-      mood_text: moodText,
-      life_event_text: note || "",
-      life_events: [],
-    });
-
-    const daily = await postPredictDaily({
-      user_id: userId,
-      date,
-      use_personal: true,
-      predict_mood: true,
-      global_weight: 0.7,
-      checkin,
-      iwatch_features: iwatchFeatures,
-    });
-
-    saveSessionState({
-      userId,
-      date,
-      checkin,
-      prediction: daily.prediction,
-    });
-  };
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
@@ -194,11 +149,7 @@ export function Layout() {
       </nav>
 
       {/* Check-in bottom sheet */}
-      <CheckInSheet
-        open={checkInOpen}
-        onClose={() => setCheckInOpen(false)}
-        onSubmit={handleCheckInSubmit}
-      />
+      <CheckInSheet open={checkInOpen} onClose={() => setCheckInOpen(false)} />
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { profileData, checkInHistory } from "./mock-data";
+import { profileData, checkInHistory } from "./mockData";
 
 interface SettingItemProps {
   icon: React.ReactNode;

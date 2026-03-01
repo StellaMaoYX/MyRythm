@@ -40,7 +40,7 @@ const chatThreads: ChatThread[] = [
   },
 ];
 
-export function ChatPage() {
+export function ChatHistoryPage() {
   const navigate = useNavigate();
 
   return (

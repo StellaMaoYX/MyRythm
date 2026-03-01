@@ -11,9 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { insightCards, heartRateData, sleepData, temperatureData, activityData } from "./mock-data";
-import { postCoachChat } from "../lib/api";
-import { loadSessionState } from "../lib/sessionStore";
+import { insightCards, heartRateData, sleepData, temperatureData, activityData } from "./mockData";
 
 // ── Insight-specific AI conversation data ──────────────────────────
 
@@ -87,34 +85,6 @@ const insightConversations: Record<number, InsightConvoData> = {
     quickSuggestion:
       "Your afternoon is fairly open between 3–4pm. A 20-minute walk outside would comfortably get you past 9,000 steps. Based on your data, that's the range where the mood benefit is strongest. Even a 10-minute walk around the block can help — it doesn't need to be a workout.",
   },
-};
-
-const mockCalendarEventsByDate: Record<string, string[]> = {
-  "2026-03-01": [
-    "08:30 Morning planning",
-    "10:00 Project sync",
-    "11:30 Deep work block (feature implementation)",
-    "13:00 Lunch with teammate",
-    "15:00 Presentation prep",
-    "17:30 Gym session",
-    "20:00 Wind-down / reading",
-  ],
-  "2026-03-02": [
-    "09:00 Standup",
-    "10:30 User interview",
-    "12:00 Lunch break",
-    "14:00 Product review",
-    "16:30 Focus sprint",
-    "19:00 Dinner with friends",
-  ],
-  "2026-03-03": [
-    "08:00 Weekly planning",
-    "09:30 Cross-team sync",
-    "12:30 Walk + recovery",
-    "14:00 Demo rehearsal",
-    "16:00 1:1 mentor check-in",
-    "21:30 Early sleep target",
-  ],
 };
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -212,7 +182,6 @@ export function InsightChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [input, setInput] = useState("");
   const [journalEntry, setJournalEntry] = useState("");
-  const [backendError, setBackendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -241,67 +210,25 @@ export function InsightChatPage() {
   useEffect(() => {
     if (!card || !convoData || phase !== "initial") return;
 
-    const userMsg: Message = { id: 1, role: "user", content: "Tell me more how this insight is formed" };
-    setMessages([userMsg]);
-    // Show assistant typing bubble immediately on page load.
-    setIsTyping(true);
-
-    const run = async () => {
-      const session = loadSessionState();
-      if (!session?.checkin || !session?.prediction) {
-        throw new Error("No session check-in/prediction found. Please submit Check-in first.");
-      }
-      const coach = await postCoachChat({
-        user_id: session.userId,
-        date: session.date,
-        checkin: session.checkin,
-        prediction: session.prediction,
-        calendar_events:
-          mockCalendarEventsByDate[session.date] ?? [
-            "09:00 Standup",
-            "11:00 Work session",
-            "14:00 Project meeting",
-            "18:00 Personal time",
-          ],
-        message: "Tell me more how this insight is formed",
-        chat_history: [],
-      });
-      addTypingResponse(
-        {
-          role: "assistant",
-          content: `${coach.explanation}\n\n${coach.anticipation}`,
-          showChart: true,
-        },
-        1200,
-        () => {
-          addTypingResponse(
-            {
-              role: "assistant",
-              content: coach.assistant_reply,
-              buttons: [
-                { label: coach.prepare_suggestion[0] || "Give me a quick suggestion", action: "suggestion" },
-                { label: "I'll figure it out myself", action: "self" },
-              ],
-            },
-            900,
-            () => setPhase("asked")
-          );
-        }
-      );
-      setPhase("explained");
+    // User auto-prompt
+    const userMsg: Message = {
+      id: 1,
+      role: "user",
+      content: "Tell me more how this insight is formed",
     };
+    setMessages([userMsg]);
 
-    run().catch((err) => {
-      setBackendError(err instanceof Error ? err.message : "Failed to call backend coach.");
-      // Fallback to local mock convo.
-      addTypingResponse(
-        {
-          role: "assistant",
-          content: convoData.explanation,
-          showChart: true,
-        },
-        1200,
-        () => {
+    // AI explanation with chart
+    addTypingResponse(
+      {
+        role: "assistant",
+        content: convoData.explanation,
+        showChart: true,
+      },
+      2000,
+      () => {
+        // Follow-up asking about protecting emotions
+        setTimeout(() => {
           addTypingResponse(
             {
               role: "assistant",
@@ -311,68 +238,57 @@ export function InsightChatPage() {
                 { label: "I'll figure it out myself", action: "self" },
               ],
             },
-            900,
+            1500,
             () => setPhase("asked")
           );
-        }
-      );
-      setPhase("explained");
-    });
+        }, 800);
+      }
+    );
+    setPhase("explained");
   }, [card, convoData, phase, addTypingResponse]);
 
   const handleButtonAction = (action: string) => {
     if (action === "suggestion") {
-      handleSendMessage("Give me a quick suggestion for today.");
-      return;
-    }
-    if (action === "self") {
-      handleSendMessage("I'd like to choose my own plan. Help me think it through briefly.");
+      setMessages((prev) => [
+        ...prev,
+        { id: prev.length + 1, role: "user", content: "Give me a quick suggestion" },
+      ]);
+      setPhase("chose-suggestion");
+      addTypingResponse(
+        { role: "assistant", content: convoData.quickSuggestion },
+        1500,
+        () => setPhase("done")
+      );
+    } else if (action === "self") {
+      setMessages((prev) => [
+        ...prev,
+        { id: prev.length + 1, role: "user", content: "I'll figure it out myself" },
+      ]);
+      setPhase("chose-self");
+      addTypingResponse(
+        {
+          role: "assistant",
+          content:
+            "That's great — you know yourself best. If you'd like, jot down what you're thinking of doing below. It can be as simple as a single sentence. I'll save it so we can look back later and see what worked for you.",
+        },
+        1200,
+        () => setPhase("done")
+      );
     }
   };
 
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = (text: string) => {
     if (!text.trim()) return;
-    const prompt = text.trim();
-    setMessages((prev) => [...prev, { id: prev.length + 1, role: "user", content: prompt }]);
+    setMessages((prev) => [...prev, { id: prev.length + 1, role: "user", content: text.trim() }]);
     setInput("");
-    setIsTyping(true);
-    setBackendError(null);
 
-    try {
-      const session = loadSessionState();
-      if (!session?.checkin || !session?.prediction) {
-        throw new Error("No session check-in/prediction found. Please submit Check-in first.");
-      }
-      const coach = await postCoachChat({
-        user_id: session.userId,
-        date: session.date,
-        checkin: session.checkin,
-        prediction: session.prediction,
-        calendar_events:
-          mockCalendarEventsByDate[session.date] ?? [
-            "09:00 Standup",
-            "11:00 Work session",
-            "14:00 Project meeting",
-            "18:00 Personal time",
-          ],
-        message: prompt,
-        chat_history: messages.map((m) => ({ role: m.role, content: m.content })),
-      });
-      const response = (coach.assistant_reply || "").trim() || coach.explanation;
-      setMessages((prev) => [...prev, { id: prev.length + 1, role: "assistant", content: response }]);
-      setIsTyping(false);
-      return;
-    } catch (err) {
-      setBackendError(err instanceof Error ? err.message : "Backend unavailable.");
-    }
-
-    // Fallback response when backend is unavailable.
     addTypingResponse(
       {
         role: "assistant",
-        content: "I couldn't reach the live model just now. Try again in a moment, and I'll continue from your latest rhythm context.",
+        content:
+          "That's a thoughtful reflection. I've noted this in your rhythm log — we can revisit it together next week to see how it played out. Take care of yourself today.",
       },
-      800
+      1500
     );
   };
 
@@ -436,11 +352,6 @@ export function InsightChatPage() {
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {backendError && (
-          <div className="bg-[#FDF8E7] border border-[#FFE0B2] rounded-xl px-3 py-2 text-[12px] text-[#A67C37]">
-            Backend unavailable. Showing fallback response. ({backendError})
-          </div>
-        )}
         {messages.map((msg) => (
           <motion.div
             key={msg.id}

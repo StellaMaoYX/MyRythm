@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import svgPaths from "../../imports/svg-ndbywbamvi";
 import { postCheckin, postPredictDaily } from "../lib/api";
@@ -71,6 +72,8 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   const handleCheckInSubmit = async (emotions: SelectedEmotion[], note: string) => {
     const userId = "u_demo";
@@ -119,6 +122,55 @@ export function Layout() {
     return location.pathname.startsWith(path);
   };
 
+  useEffect(() => {
+    const isMobile = () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 767px)").matches;
+
+    const isFormField = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || el.isContentEditable;
+    };
+
+    const updateKeyboardInset = () => {
+      if (!isMobile() || !isInputFocused || typeof window === "undefined" || !window.visualViewport) {
+        setKeyboardInset(0);
+        return;
+      }
+      const vv = window.visualViewport;
+      const inset = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+      setKeyboardInset(inset);
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isMobile() && isFormField(event.target)) {
+        setIsInputFocused(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        setIsInputFocused(isMobile() && isFormField(active));
+      }, 0);
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    window.visualViewport?.addEventListener("resize", updateKeyboardInset);
+    window.visualViewport?.addEventListener("scroll", updateKeyboardInset);
+    updateKeyboardInset();
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      window.visualViewport?.removeEventListener("resize", updateKeyboardInset);
+      window.visualViewport?.removeEventListener("scroll", updateKeyboardInset);
+    };
+  }, [isInputFocused]);
+
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5]">
       <div className="h-[100dvh] overflow-y-auto pb-[calc(72px+env(safe-area-inset-bottom)+16px)]">
@@ -128,7 +180,10 @@ export function Layout() {
       {/* Bottom navigation */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-50 bg-white"
-        style={{ borderTop: "0.612px solid rgba(45,42,38,0.08)" }}
+        style={{
+          borderTop: "0.612px solid rgba(45,42,38,0.08)",
+          bottom: -keyboardInset,
+        }}
       >
         <div className="flex items-center justify-between px-[10px] max-w-lg mx-auto pb-[env(safe-area-inset-bottom)]">
           {/* Left 2 nav items */}

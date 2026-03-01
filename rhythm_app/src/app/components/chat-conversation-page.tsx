@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
-import { Send, Sparkles, ArrowDown, ArrowLeft, Plus, History } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Send, Sparkles, ArrowDown, ArrowLeft, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { postCoachChat, type CoachResponse } from "../lib/api";
 import { loadSessionState } from "../lib/sessionStore";
@@ -15,8 +15,11 @@ interface ChatHistoryEntry {
   id: string;
   title: string;
   createdAt: string;
+  threadKey: string;
   messages: Message[];
 }
+
+const HISTORY_STORAGE_KEY = "rhythm-chat-history";
 
 const threadPrompts: Record<string, { title: string; starter: string }> = {
   "recovery-load": {
@@ -83,6 +86,23 @@ const mockCalendarEventsByDate: Record<string, string[]> = {
   ],
 };
 
+function loadHistoryEntries(): ChatHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ChatHistoryEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryEntries(entries: ChatHistoryEntry[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries.slice(0, 30)));
+}
+
 function formatCoachMessage(coach: CoachResponse): string {
   const suggestionLines = (coach.prepare_suggestion || [])
     .slice(0, 3)
@@ -103,6 +123,8 @@ function formatCoachMessage(coach: CoachResponse): string {
 export function ChatConversationPage() {
   const navigate = useNavigate();
   const { threadId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const historyId = searchParams.get("history") || "";
   const threadKey = threadId || "recovery-load";
   const thread = threadPrompts[threadKey] || threadPrompts["recovery-load"];
 
@@ -111,34 +133,30 @@ export function ChatConversationPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [chatSeed, setChatSeed] = useState(0);
-  const [showHistory, setShowHistory] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   const [skipAutoStart, setSkipAutoStart] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadIdRef = useRef(0);
-  const storageKey = `rhythm-chat-history:${threadKey}`;
+  const messagesRef = useRef<Message[]>([]);
 
-  const persistHistory = (entries: ChatHistoryEntry[]) => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(storageKey, JSON.stringify(entries.slice(0, 20)));
-  };
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
-  const archiveCurrentChat = () => {
-    if (messages.length === 0) return;
-    const titleSource = messages.find((m) => m.role === "user")?.content || thread.title;
-    const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}...` : titleSource;
+  const archiveChat = (snapshot: Message[]) => {
+    if (snapshot.length === 0) return;
+    const titleSource = snapshot.find((m) => m.role === "user")?.content || snapshot[0].content || thread.title;
+    const title = titleSource.length > 48 ? `${titleSource.slice(0, 48)}...` : titleSource;
     const entry: ChatHistoryEntry = {
-      id: `${Date.now()}`,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title,
       createdAt: new Date().toISOString(),
-      messages,
+      threadKey,
+      messages: snapshot,
     };
-    setChatHistory((prev) => {
-      const next = [entry, ...prev].slice(0, 20);
-      persistHistory(next);
-      return next;
-    });
+    const next = [entry, ...loadHistoryEntries()];
+    saveHistoryEntries(next);
   };
 
   useEffect(() => {
@@ -147,28 +165,16 @@ export function ChatConversationPage() {
     setInput("");
     setIsTyping(false);
     setChatSeed(0);
-    setShowHistory(false);
     setSkipAutoStart(false);
   }, [threadKey]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        setChatHistory([]);
-        return;
-      }
-      const parsed = JSON.parse(raw) as ChatHistoryEntry[];
-      if (!Array.isArray(parsed)) {
-        setChatHistory([]);
-        return;
-      }
-      setChatHistory(parsed);
-    } catch {
-      setChatHistory([]);
-    }
-  }, [storageKey]);
+    if (!historyId) return;
+    const entry = loadHistoryEntries().find((item) => item.id === historyId);
+    if (!entry) return;
+    setMessages(entry.messages || []);
+    setSkipAutoStart(true);
+  }, [historyId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -228,6 +234,12 @@ export function ChatConversationPage() {
     runInitialCoachMessage();
   }, [thread.starter, chatSeed, skipAutoStart]);
 
+  useEffect(() => {
+    return () => {
+      archiveChat(messagesRef.current);
+    };
+  }, []);
+
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
     const prompt = text.trim();
@@ -279,34 +291,18 @@ export function ChatConversationPage() {
   };
 
   const handleBack = () => {
-    if (threadId) {
-      navigate("/chat");
-      return;
-    }
-    navigate("/");
+    navigate("/chat");
   };
 
   const handleNewChat = () => {
     if (isTyping) return;
-    archiveCurrentChat();
+    archiveChat(messages);
     setMessages([]);
     setInput("");
     setBackendError(null);
     setSkipAutoStart(false);
-    setShowHistory(false);
+    setSearchParams({});
     setChatSeed((prev) => prev + 1);
-  };
-
-  const handleOpenHistory = () => {
-    setShowHistory((prev) => !prev);
-  };
-
-  const handleLoadHistory = (entry: ChatHistoryEntry) => {
-    setMessages(entry.messages);
-    setInput("");
-    setBackendError(null);
-    setShowHistory(false);
-    setSkipAutoStart(true);
   };
 
   return (
@@ -331,47 +327,15 @@ export function ChatConversationPage() {
             </p>
           </div>
           <button
-            onClick={handleOpenHistory}
-            className="ml-auto h-8 px-2.5 rounded-full bg-[rgba(45,42,38,0.05)] text-[#2D2A26] text-[11px] flex items-center gap-1"
-            style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
-          >
-            <History className="w-3.5 h-3.5" />
-            History
-          </button>
-          <button
             onClick={handleNewChat}
             disabled={isTyping}
-            className="h-8 px-2.5 rounded-full bg-[rgba(45,42,38,0.05)] text-[#2D2A26] text-[11px] flex items-center gap-1 disabled:opacity-40"
+            className="ml-auto h-8 px-2.5 rounded-full bg-[rgba(45,42,38,0.05)] text-[#2D2A26] text-[11px] flex items-center gap-1 disabled:opacity-40"
             style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}
           >
             <Plus className="w-3.5 h-3.5" />
             New Chat
           </button>
         </div>
-        {showHistory && (
-          <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-[rgba(45,42,38,0.08)] bg-[#FAF8F5]">
-            {chatHistory.length === 0 ? (
-              <p className="px-3 py-2 text-[12px] text-[#8A8680]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                No chat history yet
-              </p>
-            ) : (
-              chatHistory.map((entry) => (
-                <button
-                  key={entry.id}
-                  onClick={() => handleLoadHistory(entry)}
-                  className="w-full px-3 py-2 text-left border-b border-[rgba(45,42,38,0.06)] last:border-0 hover:bg-[#F5F2EE]"
-                >
-                  <p className="text-[12px] text-[#2D2A26] truncate" style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
-                    {entry.title}
-                  </p>
-                  <p className="text-[10px] text-[#8A8680]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">

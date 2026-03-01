@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/app-layout";
 import { HomePage } from "./components/home-page";
+import { ChatPage } from "./components/chat-page";
 import { ChatConversationPage } from "./components/chat-conversation-page";
 import { InsightsPage } from "./components/insights-page";
 import { InsightChatPage } from "./components/insight-chat-page";
@@ -12,7 +13,8 @@ export const router = createBrowserRouter([
     Component: Layout,
     children: [
       { index: true, Component: HomePage },
-      { path: "chat", Component: ChatConversationPage },
+      { path: "chat", Component: ChatPage },
+      { path: "chat/live", Component: ChatConversationPage },
       { path: "insights", Component: InsightsPage },
       { path: "signals", Component: ProfilePage },
     ],
